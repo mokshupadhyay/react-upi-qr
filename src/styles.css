@@ -1,0 +1,235 @@
+/*
+ * react-upi-qr default theme. Import once: `import 'react-upi-qr/styles.css'`.
+ *
+ * Override any custom property on `.upiqr` or an ancestor. The QR code is
+ * always dark on light, because many scanners cannot read inverted codes.
+ */
+
+.upiqr {
+  --upiqr-bg: #ffffff;
+  --upiqr-fg: #1a1a1a;
+  --upiqr-muted: #555b61;
+  --upiqr-border: #d4d7db;
+  --upiqr-accent: #0b5cd5;
+  --upiqr-accent-fg: #ffffff;
+  --upiqr-button-bg: #f1f3f5;
+  --upiqr-button-fg: #1a1a1a;
+  --upiqr-success: #13703a;
+  --upiqr-danger: #b3261e;
+  --upiqr-focus: #0b5cd5;
+  --upiqr-radius: 12px;
+  --upiqr-qr-size: 240px;
+  --upiqr-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 20px;
+  border: 1px solid var(--upiqr-border);
+  border-radius: var(--upiqr-radius);
+  background: var(--upiqr-bg);
+  color: var(--upiqr-fg);
+  font-family: var(--upiqr-font);
+  font-size: 16px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+@media (prefers-color-scheme: dark) {
+  .upiqr {
+    --upiqr-bg: #17191c;
+    --upiqr-fg: #f1f3f5;
+    --upiqr-muted: #a9b0b8;
+    --upiqr-border: #3a3f45;
+    --upiqr-accent: #7cb1ff;
+    --upiqr-accent-fg: #0b1626;
+    --upiqr-button-bg: #262a2f;
+    --upiqr-button-fg: #f1f3f5;
+    --upiqr-success: #6fd497;
+    --upiqr-danger: #ff8a80;
+    --upiqr-focus: #7cb1ff;
+  }
+}
+
+.upiqr *,
+.upiqr *::before,
+.upiqr *::after {
+  box-sizing: border-box;
+}
+
+.upiqr p,
+.upiqr figure,
+.upiqr ul {
+  margin: 0;
+}
+
+.upiqr-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.upiqr-amount {
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.upiqr-payee,
+.upiqr-hint,
+.upiqr-countdown,
+.upiqr-apps-label {
+  color: var(--upiqr-muted);
+  font-size: 14px;
+}
+
+.upiqr-countdown {
+  font-variant-numeric: tabular-nums;
+}
+
+.upiqr-qr-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.upiqr-qr {
+  display: block;
+  width: var(--upiqr-qr-size);
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.upiqr-qr-bg {
+  fill: #ffffff;
+}
+
+.upiqr-qr-fg {
+  fill: #000000;
+}
+
+.upiqr-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+}
+
+.upiqr-apps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.upiqr-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--upiqr-border);
+  border-radius: 999px;
+  background: var(--upiqr-button-bg);
+  color: var(--upiqr-button-fg);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: filter 120ms ease-out;
+}
+
+.upiqr-button:hover {
+  filter: brightness(0.95);
+}
+
+.upiqr-button--primary {
+  border-color: var(--upiqr-accent);
+  background: var(--upiqr-accent);
+  color: var(--upiqr-accent-fg);
+  font-size: 17px;
+}
+
+.upiqr-app {
+  width: 100%;
+}
+
+.upiqr-toggle {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--upiqr-accent);
+  font: inherit;
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.upiqr-button:focus-visible,
+.upiqr-toggle:focus-visible {
+  outline: 3px solid var(--upiqr-focus);
+  outline-offset: 2px;
+}
+
+.upiqr-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 1.4em;
+  font-weight: 600;
+}
+
+.upiqr--paid .upiqr-status {
+  color: var(--upiqr-success);
+  font-size: 20px;
+}
+
+.upiqr--failed .upiqr-status,
+.upiqr--expired .upiqr-status,
+.upiqr-error {
+  color: var(--upiqr-danger);
+}
+
+.upiqr-error ul {
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.upiqr-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--upiqr-accent);
+  animation: upiqr-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes upiqr-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upiqr-pulse {
+    animation: none;
+  }
+
+  .upiqr-button {
+    transition: none;
+  }
+}

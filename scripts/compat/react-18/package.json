@@ -1,0 +1,9 @@
+{
+  "name": "react-upi-qr-compat-react-18",
+  "private": true,
+  "description": "React 18 for scripts/react-compat.cjs. Not part of the package.",
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
