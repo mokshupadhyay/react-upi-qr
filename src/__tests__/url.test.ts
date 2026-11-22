@@ -61,13 +61,18 @@ describe('buildUpiUrl', () => {
     ['#1 shop', '%231%20shop'],
     ['Café Ünïcode', 'Caf%C3%A9%20%C3%9Cn%C3%AFcode'],
     ['रवि स्टोर', '%E0%A4%B0%E0%A4%B5%E0%A4%BF%20%E0%A4%B8%E0%A5%8D%E0%A4%9F%E0%A5%8B%E0%A4%B0'],
-    ['line\nbreak', 'line%0Abreak'],
+    ['a/b?c', 'a%2Fb%3Fc'],
     ['$&$1', '%24%26%241'],
     ['mail me@home', 'mail%20me@home'],
   ])('encodes %j in a value', (payeeName, encoded) => {
     expect(buildUpiUrl({ ...base, payeeName })).toBe(
       `upi://pay?pa=shop@okbank&pn=${encoded}&tr=ORDER42&tn=Order%2042&am=149.50&cu=INR`,
     );
+  });
+
+  it('rejects a newline in a value instead of encoding it as %0A', () => {
+    expect(() => buildUpiUrl({ ...base, payeeName: 'line\nbreak' })).toThrow(UpiError);
+    expect(() => buildUpiUrl({ ...base, payeeName: 'line\nbreak' })).toThrow(/control characters/);
   });
 
   it('keeps @ readable in the payee address', () => {

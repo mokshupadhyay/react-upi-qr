@@ -6,7 +6,7 @@ import { UpiError } from './errors.js';
 import { formatCountdown, formatRupees } from './format.js';
 import { createQrMatrix } from './qr.js';
 import type { QrErrorCorrection, QrMatrix } from './qr.js';
-import { QrSvg } from './QrCode.js';
+import { qrMinSize, QrSvg } from './QrCode.js';
 import type { ConfirmPayment, DeviceKind, UpiPaymentParams, UpiPaymentStatus, UpiValidationOptions } from './types.js';
 import { useDeviceKind } from './useDeviceKind.js';
 import { useUpiPayment } from './useUpiPayment.js';
@@ -77,6 +77,8 @@ export interface PayWithUpiProps {
   pollIntervalMs?: number;
   /** Longest delay between checks in ms. Default 15000. */
   maxPollIntervalMs?: number;
+  /** A check that has not answered after this many ms is aborted and retried. Default 15000. */
+  checkTimeoutMs?: number;
   /**
    * Skip user-agent detection. Without it, the server render and the first
    * client render show no QR code and no buttons until the device is known.
@@ -111,6 +113,7 @@ export function PayWithUpi(props: PayWithUpiProps): React.ReactElement {
     expiresInSeconds: props.expiresInSeconds,
     pollIntervalMs: props.pollIntervalMs,
     maxPollIntervalMs: props.maxPollIntervalMs,
+    checkTimeoutMs: props.checkTimeoutMs,
     validation: props.validation,
     onPaid: props.onPaid,
     onFailed: props.onFailed,
@@ -118,6 +121,10 @@ export function PayWithUpi(props: PayWithUpiProps): React.ReactElement {
   });
   const { status, url, start } = payment;
   const [qrOnPhone, setQrOnPhone] = React.useState(false);
+  const root = React.useRef<HTMLElement>(null);
+  const statusLine = React.useRef<HTMLParagraphElement>(null);
+  // The element inside the component that last had focus, if any.
+  const lastFocus = React.useRef<Element | null>(null);
 
   const mobile = kind === 'android' || kind === 'ios';
   const qrShown = kind !== null && url !== null && !isFinal(status) && (!mobile || qrOnPhone);
@@ -138,6 +145,20 @@ export function PayWithUpi(props: PayWithUpiProps): React.ReactElement {
     if (qrShown && qr !== null && qr.ok && status === 'idle') start();
   }, [qrShown, qr, status, start]);
 
+  // A final state removes the pay links and the QR toggle. If one of them had
+  // focus, move it to the status message instead of dropping it on <body>.
+  React.useEffect(() => {
+    if (!isFinal(status)) return;
+    const section = root.current;
+    const target = statusLine.current;
+    const previous = lastFocus.current;
+    if (!section || !target || !previous || typeof document === 'undefined') return;
+    const active = document.activeElement;
+    const lost = active === null || active === document.body;
+    if ((lost && !section.contains(previous)) || (active !== null && section.contains(active))) target.focus();
+    lastFocus.current = null;
+  }, [status]);
+
   const amount = formatRupees(props.params.amount);
   const payeeName = typeof props.params.payeeName === 'string' ? props.params.payeeName : '';
   const apps = props.apps || KNOWN_UPI_APPS;
@@ -145,9 +166,26 @@ export function PayWithUpi(props: PayWithUpiProps): React.ReactElement {
 
   const classes = ['upiqr', `upiqr--${kind || 'detecting'}`, `upiqr--${status}`];
   if (props.className) classes.push(props.className);
+  // Let the component grow with a large code; see `qrMinSize`.
+  const style =
+    qrShown && qr !== null && qr.ok
+      ? ({ '--upiqr-qr-min-size': `${qrMinSize(qr.matrix)}px` } as React.CSSProperties)
+      : undefined;
 
   return (
-    <section className={classes.join(' ')} aria-label={labels.title}>
+    <section
+      ref={root}
+      className={classes.join(' ')}
+      aria-label={labels.title}
+      style={style}
+      onFocus={(event) => {
+        lastFocus.current = event.target;
+      }}
+      onBlur={(event) => {
+        const next = event.relatedTarget as Node | null;
+        if (next !== null && root.current && !root.current.contains(next)) lastFocus.current = null;
+      }}
+    >
       <div className="upiqr-summary">
         {amount !== null ? <p className="upiqr-amount">{amount}</p> : null}
         {payeeName ? <p className="upiqr-payee">{labels.payee(payeeName)}</p> : null}
@@ -217,12 +255,12 @@ export function PayWithUpi(props: PayWithUpiProps): React.ReactElement {
         <p className="upiqr-countdown">{labels.expiresIn(formatCountdown(payment.secondsLeft))}</p>
       ) : null}
 
-      <p className="upiqr-status" role="status" aria-live="polite" aria-atomic="true">
+      <p className="upiqr-status" role="status" aria-live="polite" aria-atomic="true" tabIndex={-1} ref={statusLine}>
         {status === 'waiting' ? <span className="upiqr-pulse" aria-hidden="true" /> : null}
         {statusText}
       </p>
 
-      {status === 'failed' || status === 'expired' ? (
+      {url !== null && (status === 'failed' || status === 'expired') ? (
         <button type="button" className="upiqr-button upiqr-retry" onClick={start}>
           {labels.retry}
         </button>

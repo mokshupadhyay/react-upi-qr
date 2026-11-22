@@ -17,15 +17,29 @@ export const DEFAULT_UPI_LIMITS: Readonly<UpiLimits> = Object.freeze({
   payeeName: 50,
   transactionRef: 35,
   note: 50,
+  transactionId: 35,
+  url: 255,
 });
 
 // Integer part capped at 13 digits so the amount in paise stays a safe
 // integer. This is an arithmetic limit of this library, not a UPI rule.
 const AMOUNT_PATTERN = /^(\d{1,13})(?:\.(\d{1,2}))?$/;
 
-// Shape check only: `name@handle` with no spaces. It cannot tell whether the
-// address exists or which handles a bank actually issues.
-const VPA_PATTERN = /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+$/;
+// Shape check only. It cannot tell whether the address exists or which
+// handles a bank actually issues.
+// - name: starts with a letter or digit; then letters, digits, `.`, `_`, `-`;
+//   no two dots in a row, and no dot at the end.
+// - handle: letters and digits, in parts separated by single dots.
+const VPA_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*@[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*$/;
+
+// C0 and C1 control characters, including tab, newline and DEL.
+const CONTROL_PATTERN = /[\u0000-\u001F\u007F-\u009F]/;
+
+const SURROUNDING_SPACE_PATTERN = /^\s|\s$/;
+
+// `http:` or `https:`, a host without spaces, `/`, `?`, `#` or `@`, then
+// anything without spaces.
+const URL_PATTERN = /^https?:\/\/[^\s/?#@]+(?:[/?#]\S*)?$/i;
 
 const MERCHANT_CODE_PATTERN = /^\d{4}$/;
 
@@ -84,8 +98,13 @@ function isEncodable(value: string): boolean {
  *
  * Checks: required fields, value types, `payeeVpa` shape (`name@handle`),
  * `amount` (positive, at most two decimals), `currency` (`'INR'` only),
- * `merchantCode` (four digits), and the length limits in `DEFAULT_UPI_LIMITS`,
- * which are conservative defaults you can override.
+ * `merchantCode` (four digits), `url` (`http:` or `https:` only), no control
+ * characters and no leading or trailing whitespace in any text value, and the
+ * length limits in `DEFAULT_UPI_LIMITS`, which are conservative defaults you
+ * can override.
+ *
+ * `undefined`, `null`, `''` and whitespace-only values of optional fields
+ * (`currency`, `merchantCode`, `transactionId`, `url`) mean absent.
  */
 export function validateUpiParams(params: UpiPaymentParams, options: UpiValidationOptions = {}): UpiProblem[] {
   const problems: UpiProblem[] = [];
@@ -99,7 +118,8 @@ export function validateUpiParams(params: UpiPaymentParams, options: UpiValidati
   };
 
   // Returns the string value when the field passes its basic checks.
-  const text = (field: UpiParamField, required: boolean, limit?: number): string | null => {
+  // `checkSpace: false` leaves surrounding whitespace to a pattern check.
+  const text = (field: UpiParamField, required: boolean, limit?: number, checkSpace = true): string | null => {
     const value = input[field];
     if (value === undefined || value === null || value === '') {
       if (required) add('REQUIRED', field, `${field} is required.`);
@@ -109,12 +129,21 @@ export function validateUpiParams(params: UpiPaymentParams, options: UpiValidati
       add('INVALID_TYPE', field, `${field} must be a string.`);
       return null;
     }
-    if (required && value.trim().length === 0) {
-      add('REQUIRED', field, `${field} must not be blank.`);
+    if (value.trim().length === 0) {
+      // Blank optional values are left out of the URL, like empty ones.
+      if (required) add('REQUIRED', field, `${field} must not be blank.`);
       return null;
     }
     if (!isEncodable(value)) {
       add('INVALID_CHARACTERS', field, `${field} contains characters that cannot be URL-encoded.`);
+      return null;
+    }
+    if (CONTROL_PATTERN.test(value)) {
+      add('INVALID_CHARACTERS', field, `${field} contains control characters such as a newline or a tab.`);
+      return null;
+    }
+    if (checkSpace && SURROUNDING_SPACE_PATTERN.test(value)) {
+      add('INVALID_CHARACTERS', field, `${field} must not start or end with whitespace; trim it first.`);
       return null;
     }
     if (limit !== undefined && codePointLength(value) > limit) {
@@ -124,7 +153,7 @@ export function validateUpiParams(params: UpiPaymentParams, options: UpiValidati
     return value;
   };
 
-  const vpa = text('payeeVpa', true, limits.payeeVpa);
+  const vpa = text('payeeVpa', true, limits.payeeVpa, false);
   if (vpa !== null && !VPA_PATTERN.test(vpa)) {
     add('INVALID_VPA', 'payeeVpa', `payeeVpa "${vpa}" does not look like a UPI address such as "name@bank".`);
   }
@@ -141,7 +170,8 @@ export function validateUpiParams(params: UpiPaymentParams, options: UpiValidati
   }
 
   const currency = input.currency;
-  if (currency !== undefined && currency !== 'INR') {
+  // Absent like the other optional fields: undefined, null or ''.
+  if (currency !== undefined && currency !== null && currency !== '' && currency !== 'INR') {
     add('INVALID_CURRENCY', 'currency', 'currency must be "INR".');
   }
 
@@ -152,8 +182,11 @@ export function validateUpiParams(params: UpiPaymentParams, options: UpiValidati
   if (merchantCode !== null && !MERCHANT_CODE_PATTERN.test(merchantCode)) {
     add('INVALID_MERCHANT_CODE', 'merchantCode', 'merchantCode must be a four-digit merchant category code.');
   }
-  text('transactionId', false);
-  text('url', false);
+  text('transactionId', false, limits.transactionId);
+  const url = text('url', false, limits.url);
+  if (url !== null && !URL_PATTERN.test(url)) {
+    add('INVALID_URL', 'url', 'url must be an http: or https: link, for example "https://shop.example/orders/42".');
+  }
 
   return problems;
 }

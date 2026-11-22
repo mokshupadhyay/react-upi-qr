@@ -1,8 +1,9 @@
 'use client';
 import * as React from 'react';
+import { warnInDevelopment } from './dev.js';
 import { UpiError } from './errors.js';
-import { PaymentSession } from './session.js';
-import type { PaymentSessionSnapshot } from './session.js';
+import { DEFAULT_CHECK_TIMEOUT_MS, PaymentSession } from './session.js';
+import type { PaymentSessionSnapshot, PaymentSessionTiming } from './session.js';
 import type {
   ConfirmPayment,
   UpiPaymentParams,
@@ -27,7 +28,15 @@ export interface UseUpiPaymentOptions {
   maxPollIntervalMs?: number;
   /** Each `pending` answer multiplies the delay by this. Default 1.5. */
   backoffFactor?: number;
-  /** Start waiting as soon as the component mounts. Default `false`. */
+  /**
+   * A check that has not answered after this many ms is aborted through its
+   * `signal` and counts as a failed check (backoff, then retry). Default 15000.
+   */
+  checkTimeoutMs?: number;
+  /**
+   * Start waiting as soon as the component mounts, and when `params` become
+   * valid while idle. Default `false`.
+   */
   autoStart?: boolean;
   /** Override the validation limits used for `params`. */
   validation?: UpiValidationOptions;
@@ -44,7 +53,11 @@ export interface UseUpiPaymentResult {
   problems: UpiProblem[];
   /** Whole seconds until expiry while `waiting`, otherwise `null`. */
   secondsLeft: number | null;
-  /** The last rejection of `confirmPayment`, or `null`. Polling goes on regardless. */
+  /**
+   * Why the last check gave no answer: the rejection of `confirmPayment`, a
+   * timeout, or an answer other than `'paid'`, `'pending'` or `'failed'`.
+   * `null` after a valid answer. Polling goes on regardless.
+   */
   lastCheckError: unknown;
   /**
    * Start waiting for the payment (also from a final state, to try again with
@@ -62,12 +75,15 @@ const DEFAULTS = {
   pollIntervalMs: 3000,
   maxPollIntervalMs: 15000,
   backoffFactor: 1.5,
+  checkTimeoutMs: DEFAULT_CHECK_TIMEOUT_MS,
 };
+
+type TimingName = keyof typeof DEFAULTS;
 
 const INITIAL: PaymentSessionSnapshot = { status: 'idle', secondsLeft: null, lastCheckError: null };
 
-function positive(value: number | undefined, fallback: number): number {
-  return typeof value === 'number' && isFinite(value) && value > 0 ? value : fallback;
+function isPositive(value: number | undefined): boolean {
+  return typeof value === 'number' && isFinite(value) && value > 0;
 }
 
 function isHidden(): boolean {
@@ -92,13 +108,54 @@ function useUpiUrl(
 }
 
 /**
+ * The timing options with defaults applied. A value that is given but is not
+ * a positive finite number is replaced by its default, with one development
+ * warning per option and hook.
+ */
+function useTiming(options: UseUpiPaymentOptions): PaymentSessionTiming & { checkTimeoutMs: number } {
+  const warned = React.useRef<{ [name: string]: boolean }>({});
+  const pick = (name: TimingName): number => {
+    const value = options[name];
+    return isPositive(value) ? (value as number) : DEFAULTS[name];
+  };
+  const invalid = (Object.keys(DEFAULTS) as TimingName[]).filter(
+    (name) => options[name] !== undefined && !isPositive(options[name]),
+  );
+  const invalidKey = invalid.map((name) => `${name}=${String(options[name])}`).join(',');
+  React.useEffect(() => {
+    for (const name of invalid) {
+      if (warned.current[name]) continue;
+      warned.current[name] = true;
+      warnInDevelopment(
+        `${name} must be a positive number of ${name === 'backoffFactor' ? 'times' : name === 'expiresInSeconds' ? 'seconds' : 'ms'}; ` +
+          `got ${String(options[name])}. Using the default, ${DEFAULTS[name]}.`,
+      );
+    }
+  }, [invalidKey]);
+  const pollIntervalMs = pick('pollIntervalMs');
+  return {
+    expiresInSeconds: pick('expiresInSeconds'),
+    pollIntervalMs,
+    maxPollIntervalMs: Math.max(pollIntervalMs, pick('maxPollIntervalMs')),
+    backoffFactor: Math.max(1, pick('backoffFactor')),
+    checkTimeoutMs: pick('checkTimeoutMs'),
+  };
+}
+
+/**
  * Wait for a UPI payment to be confirmed by your server.
  *
  * `start()` moves from `idle` to `waiting`; the hook then calls
  * `confirmPayment` every `pollIntervalMs`, backing off by `backoffFactor` up
  * to `maxPollIntervalMs` while the answer is `pending`, until it gets `paid`
- * or `failed`, or `expiresInSeconds` pass. At the deadline it makes one last
- * check before reporting `expired`.
+ * or `failed`, or `expiresInSeconds` pass. Each check is aborted after
+ * `checkTimeoutMs`. At the deadline a check still in flight is aborted; when
+ * none is in flight, one last check is made before reporting `expired`.
+ *
+ * `paid`, `failed` and `expired` are final until `start()` is called. Changing
+ * a timing option never changes the status. A change of `params` that changes
+ * the URL while waiting starts a new session with a fresh deadline; params
+ * that become invalid while waiting stop the session (back to `idle`).
  *
  * Polling pauses while the tab is hidden and resumes with an immediate check
  * when it is visible again. Nothing runs during render, and everything stops
@@ -113,21 +170,17 @@ export function useUpiPayment(options: UseUpiPaymentOptions): UseUpiPaymentResul
   const valid = url !== null;
   const validRef = React.useRef(valid);
   validRef.current = valid;
+  const timing = useTiming(options);
+  const timingRef = React.useRef(timing);
+  timingRef.current = timing;
 
-  const expiresInSeconds = positive(options.expiresInSeconds, DEFAULTS.expiresInSeconds);
-  const pollIntervalMs = positive(options.pollIntervalMs, DEFAULTS.pollIntervalMs);
-  const maxPollIntervalMs = Math.max(pollIntervalMs, positive(options.maxPollIntervalMs, DEFAULTS.maxPollIntervalMs));
-  const backoffFactor = Math.max(1, positive(options.backoffFactor, DEFAULTS.backoffFactor));
-
+  // One session for the life of the component. Timing and params changes are
+  // applied to it below; they never replace it.
   React.useEffect(() => {
-    // New timing options start a new session.
     setSnapshot(INITIAL);
     const current = new PaymentSession({
       confirmPayment: (context) => latest.current.confirmPayment(context),
-      expiresInSeconds,
-      pollIntervalMs,
-      maxPollIntervalMs,
-      backoffFactor,
+      ...timingRef.current,
       onChange: setSnapshot,
       onFinish: (status) => {
         const callbacks = latest.current;
@@ -147,7 +200,31 @@ export function useUpiPayment(options: UseUpiPaymentOptions): UseUpiPaymentResul
       current.dispose();
       if (session.current === current) session.current = null;
     };
-  }, [expiresInSeconds, pollIntervalMs, maxPollIntervalMs, backoffFactor]);
+  }, []);
+
+  const { expiresInSeconds, pollIntervalMs, maxPollIntervalMs, backoffFactor, checkTimeoutMs } = timing;
+  React.useEffect(() => {
+    if (session.current) session.current.setTiming(timingRef.current);
+  }, [expiresInSeconds, pollIntervalMs, maxPollIntervalMs, backoffFactor, checkTimeoutMs]);
+
+  const seenUrl = React.useRef(url);
+  React.useEffect(() => {
+    if (seenUrl.current === url) return;
+    seenUrl.current = url;
+    const current = session.current;
+    if (!current) return;
+    const status = current.state.status;
+    if (url === null) {
+      // Do not go on asking about a payment request that is no longer valid.
+      if (status === 'waiting') current.reset();
+    } else if (status === 'waiting') {
+      // A different payment: new session, fresh deadline.
+      current.restart();
+    } else if (status === 'idle' && latest.current.autoStart) {
+      current.start();
+    }
+    // Final states stay final.
+  }, [url]);
 
   const start = React.useCallback(() => {
     if (session.current && validRef.current) session.current.start();

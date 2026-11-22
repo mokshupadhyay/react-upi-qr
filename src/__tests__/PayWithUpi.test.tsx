@@ -155,6 +155,7 @@ describe('<PayWithUpi> on desktop', () => {
         params={{ ...params, url: `https://shop.example/${'a'.repeat(3000)}` }}
         confirmPayment={confirmPayment}
         deviceKind="desktop"
+        validation={{ limits: { url: 4000 } }}
       />,
     );
     expect(screen.getByRole('alert').textContent).toBe('This payment request is too long for a QR code.');

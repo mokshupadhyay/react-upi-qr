@@ -4,6 +4,8 @@ import { UpiError } from './errors.js';
 /** QR error correction level: roughly 7, 15, 25 or 30 percent of the code can be damaged. */
 export type QrErrorCorrection = 'L' | 'M' | 'Q' | 'H';
 
+const LEVELS: QrErrorCorrection[] = ['L', 'M', 'Q', 'H'];
+
 /** A QR code as a square grid of modules. `modules[row][col]` is `true` when dark. */
 export interface QrMatrix {
   size: number;
@@ -11,7 +13,8 @@ export interface QrMatrix {
 }
 
 /**
- * Encode text as a QR code, picking the smallest version that fits.
+ * Encode text as a QR code, picking the smallest version that fits. An
+ * `errorCorrection` other than `'L'`, `'M'`, `'Q'` or `'H'` means `'M'`.
  *
  * The text is encoded in byte mode as UTF-8. `buildUpiUrl` output is always
  * ASCII, because every value is percent-encoded, so it is encoded one byte
@@ -22,6 +25,8 @@ export interface QrMatrix {
  * with a lone UTF-16 surrogate, which has no UTF-8 form.
  */
 export function createQrMatrix(text: string, errorCorrection: QrErrorCorrection = 'M'): QrMatrix {
+  // Anything other than the four levels means the default.
+  if (LEVELS.indexOf(errorCorrection) === -1) errorCorrection = 'M';
   const code = qrcode(0, errorCorrection);
   // The encoder writes the low byte of each character code, so hand it one
   // character per UTF-8 byte.

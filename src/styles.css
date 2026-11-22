@@ -27,6 +27,8 @@
   align-items: center;
   gap: 12px;
   max-width: 360px;
+  /* Room for a dense code: --upiqr-qr-min-size plus padding and border. */
+  max-width: max(360px, calc(var(--upiqr-qr-min-size, 0px) + 42px));
   margin: 0 auto;
   padding: 20px;
   border: 1px solid var(--upiqr-border);
@@ -101,6 +103,11 @@
 .upiqr-qr {
   display: block;
   width: var(--upiqr-qr-size);
+  /*
+   * Never smaller than 3 CSS px per module (--upiqr-qr-min-size is set on the
+   * <svg> from its version), unless the container is narrower.
+   */
+  width: max(var(--upiqr-qr-size), var(--upiqr-qr-min-size, 0px));
   max-width: 100%;
   height: auto;
   border-radius: 8px;
@@ -176,7 +183,8 @@
 }
 
 .upiqr-button:focus-visible,
-.upiqr-toggle:focus-visible {
+.upiqr-toggle:focus-visible,
+.upiqr-status:focus-visible {
   outline: 3px solid var(--upiqr-focus);
   outline-offset: 2px;
 }

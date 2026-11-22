@@ -149,3 +149,108 @@ describe('validateUpiParams', () => {
     expect(Object.isFrozen(DEFAULT_UPI_LIMITS)).toBe(true);
   });
 });
+
+describe('validateUpiParams: review findings', () => {
+  // Finding 10.
+  it.each(['-@-', 'a@.', 'a@-', '.@b', 'a@b..', 'a..b@okaxis', 'a.@okaxis', '_a@okaxis', 'a@.okaxis', 'a@ok-axis', 'a@ok_axis'])(
+    'rejects the VPA %j',
+    (payeeVpa) => {
+      expect(codes(validateUpiParams({ ...base, payeeVpa }))).toEqual(['payeeVpa:INVALID_VPA']);
+    },
+  );
+
+  it.each([
+    'merchant.store.payments@okhdfcbank',
+    'abc.def-1@oksbi',
+    'name_1@paytm',
+    'paytmqr2810050501011abcdef@paytm',
+    'q123456789@ybl',
+    '9876543210@upi',
+    'Shop-Name@ICICI',
+    'user@ok.bank',
+    'a.b.c@x.y.z',
+    'a-.b@ybl',
+  ])('keeps the real-world-shaped VPA %j valid', (payeeVpa) => {
+    expect(validateUpiParams({ ...base, payeeVpa })).toEqual([]);
+  });
+
+  // Finding 11.
+  it.each(['payeeName', 'transactionRef', 'note', 'transactionId'] as const)(
+    'rejects control characters in %s',
+    (field) => {
+      for (const bad of ['a\nb', 'a\u0000', '\u0007x', 'x\u007f', 'x\u009fy', 'tab\there']) {
+        expect(codes(validateUpiParams({ ...base, [field]: bad }))).toEqual([`${field}:INVALID_CHARACTERS`]);
+      }
+    },
+  );
+
+  it.each(['payeeName', 'transactionRef', 'note', 'transactionId'] as const)(
+    'rejects leading or trailing whitespace in %s',
+    (field) => {
+      for (const bad of [' Shop', 'Shop ', '  Shop  ', '\u00a0Shop', 'Shop\u3000']) {
+        const problems = validateUpiParams({ ...base, [field]: bad });
+        expect(codes(problems)).toEqual([`${field}:INVALID_CHARACTERS`]);
+        expect(problems[0].message).toMatch(/whitespace/);
+      }
+    },
+  );
+
+  it('rejects surrounding whitespace in payeeVpa as an invalid VPA', () => {
+    expect(codes(validateUpiParams({ ...base, payeeVpa: 'shop@okbank ' }))).toEqual(['payeeVpa:INVALID_VPA']);
+  });
+
+  it('keeps whitespace inside values', () => {
+    expect(validateUpiParams({ ...base, payeeName: 'Corner  Shop', note: 'Order 42, thanks' })).toEqual([]);
+  });
+
+  it('treats a whitespace-only optional value as absent', () => {
+    expect(validateUpiParams({ ...base, transactionId: '   ', url: ' ' })).toEqual([]);
+  });
+
+  // Finding 12.
+  it('treats a null or empty currency as absent, like the other optional fields', () => {
+    const withNull = { ...base, currency: null } as unknown as UpiPaymentParams;
+    const withEmpty = { ...base, currency: '' } as unknown as UpiPaymentParams;
+    expect(validateUpiParams(withNull)).toEqual([]);
+    expect(validateUpiParams(withEmpty)).toEqual([]);
+    expect(validateUpiParams({ ...base, merchantCode: null, transactionId: null, url: null } as unknown as UpiPaymentParams)).toEqual([]);
+  });
+
+  // Finding 13.
+  it('limits transactionId and url, with overridable defaults', () => {
+    expect(DEFAULT_UPI_LIMITS.transactionId).toBe(35);
+    expect(DEFAULT_UPI_LIMITS.url).toBe(255);
+    const longId = 'T'.repeat(36);
+    const longUrl = `https://shop.example/${'a'.repeat(255)}`;
+    expect(codes(validateUpiParams({ ...base, transactionId: longId, url: longUrl }))).toEqual([
+      'transactionId:TOO_LONG',
+      'url:TOO_LONG',
+    ]);
+    expect(
+      validateUpiParams({ ...base, transactionId: longId, url: longUrl }, { limits: { transactionId: 36, url: 300 } }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    'javascript:alert(1)',
+    'JAVASCRIPT:alert(1)',
+    'data:text/html,hi',
+    'ftp://shop.example/x',
+    'upi://pay?pa=a@b',
+    '//shop.example/x',
+    'shop.example/x',
+    'https://',
+    'https:///x',
+    'https://shop example/x',
+    'https://shop.example/a b',
+  ])('rejects the url %j', (url) => {
+    expect(codes(validateUpiParams({ ...base, url }))).toEqual(['url:INVALID_URL']);
+  });
+
+  it.each(['https://shop.example', 'https://shop.example/orders/42?tab=items#top', 'http://localhost:3000/o/1', 'HTTPS://SHOP.EXAMPLE/'])(
+    'accepts the url %j',
+    (url) => {
+      expect(validateUpiParams({ ...base, url })).toEqual([]);
+    },
+  );
+});

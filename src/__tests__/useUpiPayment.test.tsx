@@ -125,9 +125,26 @@ describe('useUpiPayment', () => {
   });
 
   it('never has two checks in flight', async () => {
-    const { calls } = setup();
+    const { calls } = setup({ checkTimeoutMs: 10 * 60 * 1000 });
     await advance(60000 * 5);
     expect(calls).toHaveLength(1);
+  });
+
+  it('never has two checks in flight when checks time out', async () => {
+    const signals: AbortSignal[] = [];
+    let overlaps = 0;
+    const confirmPayment = (context: ConfirmPaymentContext) => {
+      // The previous check must be over (aborted by its timeout) before a new one starts.
+      if (signals.some((signal) => !signal.aborted)) overlaps += 1;
+      signals.push(context.signal!);
+      return new Promise<PaymentCheckResult>(() => undefined);
+    };
+    renderHook(() =>
+      useUpiPayment({ params, confirmPayment, autoStart: true, pollIntervalMs: 1000, checkTimeoutMs: 2000, expiresInSeconds: 600 }),
+    );
+    await advance(60000 * 5);
+    expect(signals.length).toBeGreaterThan(10);
+    expect(overlaps).toBe(0);
   });
 
   it('keeps polling after a rejection and exposes the error', async () => {
