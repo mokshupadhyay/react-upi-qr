@@ -262,3 +262,7 @@ npm test
 npm run build
 npm run test:compat   # React 17, 18 and 19 against lib/
 ```
+
+## Author
+
+Built and maintained by [Moksh Upadhyay](https://mokshupadhyay.com).

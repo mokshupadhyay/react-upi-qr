@@ -17,7 +17,7 @@
   "sideEffects": [
     "*.css"
   ],
-  "author": "Moksh Upadhyay <mokshupadhyay4@gmail.com>",
+  "author": "Moksh Upadhyay <mokshupadhyay4@gmail.com> (https://mokshupadhyay.com)",
   "homepage": "https://github.com/mokshupadhyay/react-upi-qr#readme",
   "repository": {
     "type": "git",
